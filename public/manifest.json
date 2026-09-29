@@ -1,0 +1,53 @@
+{
+  "name": "JarFlow - Water Jar Management PWA",
+  "short_name": "JarFlow",
+  "description": "Fast, clean mobile Jar & Udhari Management system for water distribution businesses",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAFAFA",
+  "theme_color": "#1E40AF",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Daily Entry",
+      "short_name": "Quick Entry",
+      "description": "Record jar delivery or returns in 3 seconds",
+      "url": "/?tab=entry",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Customers & Ledger",
+      "short_name": "Customers",
+      "description": "View customer list and udhari balance",
+      "url": "/?tab=customers",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Collect Payment",
+      "short_name": "Payment",
+      "description": "Record cash or UPI payment",
+      "url": "/?tab=payments",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "192x192" }]
+    }
+  ]
+}
