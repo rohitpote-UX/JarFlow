@@ -11,15 +11,15 @@ const STORAGE_KEYS = {
 };
 
 export const defaultSettings: BusinessSettings = {
-  businessName: 'PureFlow Waters (जलधारा)',
-  ownerName: 'Rohit Pote',
-  phone: '9822019988',
-  upiId: 'pureflow@upi',
-  address: 'Shop No. 4, Water Hub, Main Road, Pune',
-  defaultJarRate: 35,
-  totalGodownJars: 500,
-  lowStockThreshold: 40,
-  language: 'mr', // default Marathi for authentic local owner experience!
+  businessName: (import.meta.env.VITE_BUSINESS_NAME as string) || 'PureFlow Waters (जलधारा)',
+  ownerName: (import.meta.env.VITE_OWNER_NAME as string) || 'Rohit Pote',
+  phone: (import.meta.env.VITE_DEFAULT_PHONE as string) || '9822019988',
+  upiId: (import.meta.env.VITE_DEFAULT_UPI_ID as string) || 'pureflow@upi',
+  address: (import.meta.env.VITE_DEFAULT_ADDRESS as string) || 'Shop No. 4, Water Hub, Main Road, Pune',
+  defaultJarRate: Number(import.meta.env.VITE_DEFAULT_JAR_RATE) || 35,
+  totalGodownJars: Number(import.meta.env.VITE_TOTAL_GODOWN_JARS) || 500,
+  lowStockThreshold: Number(import.meta.env.VITE_LOW_STOCK_THRESHOLD) || 40,
+  language: ((import.meta.env.VITE_DEFAULT_LANGUAGE as 'mr' | 'en') || 'mr'),
 };
 
 // Initial realistic customers
