@@ -2,15 +2,41 @@ export type JarStatus = 'available' | 'with_customer' | 'damaged' | 'lost';
 
 export type PaymentMode = 'CASH' | 'UPI' | 'BANK' | 'SPLIT' | 'UDHARI' | 'NONE';
 
+export interface Business {
+  id: string;
+  name: string;
+  ownerName: string;
+  phone: string;
+  area?: string;
+  address?: string;
+  upiId?: string;
+  defaultJarRate: number; // default ₹35
+  totalGodownJars: number; // starts at 0 for fresh business!
+  lowStockThreshold: number;
+  language: 'mr' | 'en';
+  onboardingCompleted: boolean;
+  createdAt: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: 'ADMIN' | 'STAFF' | 'DELIVERY';
+  businessId: string;
+}
+
 export interface Customer {
   id: string;
+  businessId: string;
   name: string;
   mobile: string;
   address: string;
   area: string;
   active: boolean;
-  currentJars: number;
-  pendingAmount: number;
+  currentJars: number; // starts at 0
+  pendingAmount: number; // starts at 0
   defaultRate?: number;
   notes?: string;
   createdAt: string;
@@ -19,6 +45,7 @@ export interface Customer {
 
 export interface Jar {
   id: string;
+  businessId: string;
   serialNumber: string;
   qrCode?: string;
   status: JarStatus;
@@ -31,6 +58,7 @@ export interface Jar {
 
 export interface JarTransaction {
   id: string;
+  businessId: string;
   customerId: string;
   customerName: string;
   customerMobile?: string;
@@ -52,6 +80,7 @@ export interface JarTransaction {
 
 export interface Payment {
   id: string;
+  businessId: string;
   customerId: string;
   customerName: string;
   date: string;
@@ -67,6 +96,8 @@ export interface Payment {
 
 export interface LedgerEntry {
   id: string;
+  businessId: string;
+  customerId: string;
   date: string;
   type: 'TRANSACTION' | 'PAYMENT';
   description: string;
@@ -87,9 +118,9 @@ export interface BusinessSettings {
   phone: string;
   upiId: string;
   address: string;
-  defaultJarRate: number; // default ₹35
-  totalGodownJars: number; // default e.g. 500
-  lowStockThreshold: number; // alert if available < threshold
+  defaultJarRate: number;
+  totalGodownJars: number;
+  lowStockThreshold: number;
   language: 'en' | 'mr';
 }
 
@@ -99,11 +130,12 @@ export type AppTab = 'dashboard' | 'customers' | 'entry' | 'payments' | 'reports
 
 export interface AppNotification {
   id: string;
+  businessId: string;
   title: string;
   titleMr: string;
   message: string;
   messageMr: string;
-  type: 'PAYMENT' | 'STOCK' | 'RETURN' | 'DAILY';
+  type: 'PAYMENT' | 'STOCK' | 'RETURN' | 'DAILY' | 'WELCOME';
   time: string;
   read: boolean;
 }

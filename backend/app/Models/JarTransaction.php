@@ -11,6 +11,7 @@ class JarTransaction extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
+        'business_id',
         'customer_id',
         'user_id',
         'transaction_date',
@@ -40,6 +41,11 @@ class JarTransaction extends Model
         'total_paid' => 'decimal:2',
         'udhari_amount' => 'decimal:2',
     ];
+
+    public function business()
+    {
+        return $this->belongsTo(Business::class);
+    }
 
     public function customer()
     {

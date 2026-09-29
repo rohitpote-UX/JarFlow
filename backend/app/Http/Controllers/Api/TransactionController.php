@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Business;
 use App\Models\Customer;
 use App\Models\JarTransaction;
 use App\Models\Ledger;
@@ -13,11 +14,17 @@ use Illuminate\Support\Facades\Validator;
 class TransactionController extends Controller
 {
     /**
-     * Get transactions with filters (today, customer, date range)
+     * Get transactions strictly scoped to the authenticated business
      */
     public function index(Request $request)
     {
+        $businessId = $request->user()?->business_id ?? $request->header('X-Business-Id');
+
         $query = JarTransaction::with('customer:id,name,mobile,area');
+
+        if ($businessId) {
+            $query->where('business_id', $businessId);
+        }
 
         if ($request->has('customer_id')) {
             $query->where('customer_id', $request->customer_id);
@@ -40,12 +47,14 @@ class TransactionController extends Controller
     }
 
     /**
-     * Store new daily entry in < 1 second with atomic DB::transaction
+     * Store new daily entry atomically with strict inventory validation
      */
     public function store(Request $request)
     {
+        $businessId = $request->user()?->business_id ?? $request->header('X-Business-Id');
+
         $validator = Validator::make($request->all(), [
-            'customer_id' => 'required|uuid|exists:customers,id',
+            'customer_id' => 'required|uuid',
             'jars_given' => 'required|integer|min:0',
             'jars_returned' => 'required|integer|min:0',
             'rate_per_jar' => 'nullable|numeric|min:0',
@@ -64,9 +73,46 @@ class TransactionController extends Controller
 
         $validated = $validator->validated();
 
-        $transaction = DB::transaction(function () use ($validated, $request) {
-            $customer = Customer::lockForUpdate()->findOrFail($validated['customer_id']);
+        // 1. Verify customer exists within the authenticated business tenant
+        $customerQuery = Customer::lockForUpdate()->where('id', $validated['customer_id']);
+        if ($businessId) {
+            $customerQuery->where('business_id', $businessId);
+        }
+        $customer = $customerQuery->first();
 
+        if (!$customer) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'ग्राहक सापडला नाही (पहिले ग्राहक जोडा).',
+            ], 404);
+        }
+
+        // 2. Strict Inventory Validation: Check customer return count
+        if ($validated['jars_returned'] > $customer->current_jars) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "ग्राहक जवळ फक्त {$customer->current_jars} जार आहेत. जास्त जार परत घेता येणार नाहीत.",
+            ], 422);
+        }
+
+        // 3. Strict Inventory Validation: Check godown available stock
+        if ($businessId) {
+            $business = Business::find($businessId);
+            if ($business && $business->total_godown_jars > 0) {
+                $totalWithCustomers = Customer::where('business_id', $businessId)->sum('current_jars');
+                $availableGodownJars = max(0, $business->total_godown_jars - $totalWithCustomers);
+
+                if ($validated['jars_given'] > $availableGodownJars) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "गोदाममध्ये उपलब्ध जार फक्त {$availableGodownJars} आहेत. जास्त जार देता येणार नाहीत.",
+                    ], 422);
+                }
+            }
+        }
+
+        // 4. Atomic Execution with DB::transaction
+        $result = DB::transaction(function () use ($validated, $customer, $businessId, $request) {
             $rate = $validated['rate_per_jar'] ?? $customer->default_rate ?? 35.00;
             $billAmount = $validated['jars_given'] * $rate;
             $cashPaid = $validated['cash_paid'] ?? 0.00;
@@ -75,8 +121,9 @@ class TransactionController extends Controller
             $udhariAmount = max(0, $billAmount - $totalPaid);
             $netJars = $validated['jars_given'] - $validated['jars_returned'];
 
-            // 1. Create Transaction
+            // 4a. Create Transaction Record
             $tx = JarTransaction::create([
+                'business_id' => $businessId ?? $customer->business_id,
                 'customer_id' => $customer->id,
                 'user_id' => $request->user()?->id,
                 'transaction_date' => now()->toDateString(),
@@ -93,7 +140,7 @@ class TransactionController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
-            // 2. Update Customer Balances
+            // 4b. Update Customer Balances
             $newJars = max(0, $customer->current_jars + $netJars);
             $newPending = max(0, $customer->pending_amount + $udhariAmount);
 
@@ -102,8 +149,9 @@ class TransactionController extends Controller
                 'pending_amount' => $newPending,
             ]);
 
-            // 3. Write Immutable Ledger Entry
+            // 4c. Write Immutable Ledger Entry
             Ledger::create([
+                'business_id' => $businessId ?? $customer->business_id,
                 'customer_id' => $customer->id,
                 'entry_date' => now()->toDateString(),
                 'entry_type' => 'TRANSACTION',
@@ -114,7 +162,7 @@ class TransactionController extends Controller
                 'debit_amount' => $udhariAmount,
                 'credit_amount' => $totalPaid,
                 'balance_after' => $newPending,
-                'description' => "Given: {$validated['jars_given']}, Returned: {$validated['jars_returned']}",
+                'description' => "दिले: {$validated['jars_given']}, परत आले: {$validated['jars_returned']}",
             ]);
 
             return [
@@ -125,8 +173,28 @@ class TransactionController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Daily entry saved successfully in milliseconds.',
-            'data' => $transaction,
+            'message' => 'नोंद यशस्वीरीत्या सेव्ह केली गेली.',
+            'data' => $result,
         ], 201);
+    }
+
+    /**
+     * Show transaction details
+     */
+    public function show(Request $request, string $id)
+    {
+        $businessId = $request->user()?->business_id ?? $request->header('X-Business-Id');
+
+        $query = JarTransaction::with('customer')->where('id', $id);
+        if ($businessId) {
+            $query->where('business_id', $businessId);
+        }
+
+        $transaction = $query->firstOrFail();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $transaction,
+        ]);
     }
 }

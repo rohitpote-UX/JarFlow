@@ -10,12 +10,15 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { useApp } from '../../context/AppContext';
+import { BarChart2 } from 'lucide-react';
 
 export const JarMovementChart: React.FC = () => {
-  const { transactions, settings } = useApp();
-  const isMr = settings.language === 'mr';
+  const { transactions, business } = useApp();
+  const isMr = business.language === 'mr';
 
-  // Compute past 7 days movement
+  const hasTransactions = transactions.length > 0;
+
+  // Compute past 7 days movement from REAL records only
   const data = React.useMemo(() => {
     const days = isMr
       ? ['रवि', 'सोम', 'मंगळ', 'बुध', 'गुरु', 'शुक्र', 'शनि']
@@ -43,13 +46,15 @@ export const JarMovementChart: React.FC = () => {
 
       result.push({
         day: dayName,
-        given: given || (i === 0 ? 21 : 12 + i * 2),
-        returned: returned || (i === 0 ? 15 : 10 + i * 2),
+        given,
+        returned,
       });
     }
 
     return result;
   }, [transactions, isMr]);
+
+  const totalMovement = data.reduce((sum, d) => sum + d.given + d.returned, 0);
 
   return (
     <div className="bg-white p-4 rounded-3xl border border-surface-border shadow-card">
@@ -67,55 +72,69 @@ export const JarMovementChart: React.FC = () => {
         </span>
       </div>
 
-      <div className="h-56 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-            <XAxis
-              dataKey="day"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 11, fill: '#64748B' }}
-            />
-            <YAxis
-              axisLine={false}
-              tickLine={false}
-              tick={{ fontSize: 11, fill: '#64748B' }}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: '#1E293B',
-                borderRadius: '12px',
-                border: 'none',
-                color: '#FFFFFF',
-                fontSize: '12px',
-                padding: '8px 12px',
-              }}
-              itemStyle={{ color: '#FFFFFF' }}
-            />
-            <Legend
-              verticalAlign="top"
-              align="right"
-              iconType="circle"
-              wrapperStyle={{ fontSize: '11px', paddingBottom: '8px' }}
-            />
-            <Bar
-              dataKey="given"
-              name={isMr ? 'दिलेले (Given)' : 'Given'}
-              fill="#1E40AF"
-              radius={[6, 6, 0, 0]}
-              barSize={12}
-            />
-            <Bar
-              dataKey="returned"
-              name={isMr ? 'जमा (Returned)' : 'Returned'}
-              fill="#16A34A"
-              radius={[6, 6, 0, 0]}
-              barSize={12}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {!hasTransactions || totalMovement === 0 ? (
+        <div className="h-56 w-full flex flex-col items-center justify-center text-center p-4 bg-gray-50/60 rounded-2xl border border-dashed border-gray-200">
+          <BarChart2 className="w-8 h-8 text-gray-300 mb-1.5" />
+          <p className="text-xs font-medium text-gray-500">
+            {isMr
+              ? 'या कालावधीसाठी कोणताही transaction उपलब्ध नाही.'
+              : 'No jar transactions recorded in this period.'}
+          </p>
+          <span className="text-[11px] text-gray-400 mt-0.5">
+            {isMr ? 'पहिली नोंद केल्यानंतर हालचाल चार्ट दिसेल' : 'Movement will appear after first entry'}
+          </span>
+        </div>
+      ) : (
+        <div className="h-56 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+              <XAxis
+                dataKey="day"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 11, fill: '#64748B' }}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 11, fill: '#64748B' }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#1E293B',
+                  borderRadius: '12px',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  fontSize: '12px',
+                  padding: '8px 12px',
+                }}
+                itemStyle={{ color: '#FFFFFF' }}
+              />
+              <Legend
+                verticalAlign="top"
+                align="right"
+                iconType="circle"
+                wrapperStyle={{ fontSize: '11px', paddingBottom: '8px' }}
+              />
+              <Bar
+                dataKey="given"
+                name={isMr ? 'दिलेले (Given)' : 'Given'}
+                fill="#1E40AF"
+                radius={[6, 6, 0, 0]}
+                barSize={12}
+              />
+              <Bar
+                dataKey="returned"
+                name={isMr ? 'जमा (Returned)' : 'Returned'}
+                fill="#16A34A"
+                radius={[6, 6, 0, 0]}
+                barSize={12}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 };

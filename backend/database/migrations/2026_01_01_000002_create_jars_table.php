@@ -8,14 +8,15 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * Individual Jar inventory & QR tracking table.
+     * Individual Jar inventory & QR tracking table (tenant-scoped).
      */
     public function up(): void
     {
         Schema::create('jars', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->string('serial_number', 50)->unique();
-            $table->string('qr_code', 100)->nullable()->unique()->index();
+            $table->foreignUuid('business_id')->constrained('businesses')->cascadeOnDelete()->index();
+            $table->string('serial_number', 50)->index();
+            $table->string('qr_code', 100)->nullable()->index();
             $table->enum('status', ['available', 'with_customer', 'damaged', 'lost'])->default('available')->index();
             
             // Current assignment
@@ -25,6 +26,8 @@ return new class extends Migration
             
             $table->text('notes')->nullable();
             $table->timestamps();
+
+            $table->unique(['business_id', 'serial_number']);
         });
     }
 

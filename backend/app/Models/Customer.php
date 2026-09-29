@@ -12,6 +12,7 @@ class Customer extends Model
     use HasFactory, HasUuids, SoftDeletes;
 
     protected $fillable = [
+        'business_id',
         'name',
         'mobile',
         'area',
@@ -29,6 +30,11 @@ class Customer extends Model
         'pending_amount' => 'decimal:2',
         'default_rate' => 'decimal:2',
     ];
+
+    public function business()
+    {
+        return $this->belongsTo(Business::class);
+    }
 
     public function transactions()
     {

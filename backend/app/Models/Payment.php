@@ -11,6 +11,7 @@ class Payment extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
+        'business_id',
         'customer_id',
         'user_id',
         'payment_date',
@@ -28,6 +29,11 @@ class Payment extends Model
         'previous_pending' => 'decimal:2',
         'remaining_balance' => 'decimal:2',
     ];
+
+    public function business()
+    {
+        return $this->belongsTo(Business::class);
+    }
 
     public function customer()
     {

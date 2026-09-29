@@ -214,8 +214,16 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
         {activeTab === 'ledger' && (
           <div className="flex-1 overflow-y-auto min-h-[220px]">
             {ledger.length === 0 ? (
-              <div className="py-10 text-center text-xs text-gray-400">
-                {isMr ? 'अजून कोणताही व्यवहार नोंदवलेला नाही.' : 'No transactions recorded yet.'}
+              <div className="py-12 text-center text-xs text-gray-500 space-y-1.5 animate-fade-in">
+                <FileText className="w-8 h-8 mx-auto text-gray-300" />
+                <h4 className="font-bold text-gray-800">
+                  {isMr ? 'ग्राहक ledger येथे दिसेल.' : 'Customer ledger will appear here.'}
+                </h4>
+                <p className="text-[11px] text-gray-500 max-w-xs mx-auto">
+                  {isMr
+                    ? 'ग्राहकाला जार दिल्यानंतर किंवा पेमेंट नोंदवल्यानंतर transaction history येथे दिसेल.'
+                    : 'Transaction history will appear once jars are delivered or payments are recorded.'}
+                </p>
               </div>
             ) : (
               <div className="divide-y divide-gray-100 text-xs">

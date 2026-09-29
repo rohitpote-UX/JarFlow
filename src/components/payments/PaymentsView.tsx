@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { AddCustomerModal } from '../customers/AddCustomerModal';
 import {
   IndianRupee,
   Receipt,
@@ -9,6 +10,7 @@ import {
   Smartphone,
   Building,
   UserCheck,
+  UserPlus,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -19,21 +21,46 @@ export const PaymentsView: React.FC = () => {
     customers,
     payments,
     addPayment,
-    settings,
+    business,
+    totalCollectedPeriod,
+    totalUdhariAll,
     selectedCustomerId,
     setSelectedCustomerId,
   } = useApp();
 
-  const isMr = settings.language === 'mr';
+  const isMr = business.language === 'mr';
+  const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
 
   // Form states
   const [customerId, setCustomerId] = useState<string>(
     selectedCustomerId || (customers.find((c) => c.pendingAmount > 0)?.id ?? customers[0]?.id ?? '')
   );
-  const [amount, setAmount] = useState<number>(500);
+  const [amount, setAmount] = useState<number>(0);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'UPI' | 'BANK'>('CASH');
   const [referenceNo, setReferenceNo] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Sync selectedCustomerId
+  useEffect(() => {
+    if (selectedCustomerId) {
+      setCustomerId(selectedCustomerId);
+    } else if (customers.length > 0 && !customerId) {
+      setCustomerId(customers[0].id);
+    }
+  }, [selectedCustomerId, customers, customerId]);
+
+  // Set default amount to customer's pending amount if available
+  const activeCustomer = customers.find((c) => c.id === customerId);
+  const pendingBefore = activeCustomer?.pendingAmount || 0;
+  const pendingAfter = Math.max(0, pendingBefore - amount);
+
+  useEffect(() => {
+    if (pendingBefore > 0) {
+      setAmount(pendingBefore);
+    } else {
+      setAmount(0);
+    }
+  }, [customerId, pendingBefore]);
 
   // Receipt popup state
   const [receiptData, setReceiptData] = useState<{
@@ -45,9 +72,42 @@ export const PaymentsView: React.FC = () => {
     remaining: number;
   } | null>(null);
 
-  const activeCustomer = customers.find((c) => c.id === customerId);
-  const pendingBefore = activeCustomer?.pendingAmount || 0;
-  const pendingAfter = Math.max(0, pendingBefore - amount);
+  // CASE 1: NO CUSTOMERS
+  if (customers.length === 0) {
+    return (
+      <div className="pb-28 pt-8 px-4 max-w-md mx-auto text-center space-y-4 animate-fade-in">
+        <div className="w-16 h-16 rounded-3xl bg-green-100 text-success-700 mx-auto flex items-center justify-center shadow-soft">
+          <IndianRupee className="w-8 h-8" />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-base font-extrabold text-gray-900">
+            {isMr ? 'पहिले ग्राहक तयार करा' : 'Add Customers First'}
+          </h3>
+          <p className="text-xs text-gray-500 max-w-xs mx-auto">
+            {isMr
+              ? 'ग्राहकाकडून पेमेंट जमा करण्यासाठी सिस्टिममध्ये किमान एक ग्राहक असणे आवश्यक आहे.'
+              : 'Add at least one customer before recording cash or UPI payment collections.'}
+          </p>
+        </div>
+
+        <button
+          onClick={() => {
+            sound.playClick();
+            setIsAddCustomerOpen(true);
+          }}
+          className="w-full py-3 px-4 rounded-2xl bg-brand-800 hover:bg-brand-900 active-press text-white text-xs font-bold shadow-button flex items-center justify-center gap-2"
+        >
+          <UserPlus className="w-4 h-4" />
+          <span>{isMr ? '+ ग्राहक जोडा' : '+ Add Customer'}</span>
+        </button>
+
+        <AddCustomerModal
+          isOpen={isAddCustomerOpen}
+          onClose={() => setIsAddCustomerOpen(false)}
+        />
+      </div>
+    );
+  }
 
   const handleSavePayment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,12 +144,12 @@ export const PaymentsView: React.FC = () => {
   const handleWhatsAppReceipt = () => {
     if (!receiptData) return;
     const msg = isMr
-      ? `*${settings.businessName} - जमा पावती*\n\n` +
+      ? `*${business.name} - जमा पावती*\n\n` +
         `नमस्कार ${receiptData.customerName} जी,\n` +
         `आपल्याकडून *₹${receiptData.amount}* (${receiptData.mode}) जमा झाले आहेत.\n` +
         `आता शिल्लक उधारी: *₹${receiptData.remaining}* आहे.\n\n` +
         `धन्यवाद! 🙏`
-      : `*${settings.businessName} - Payment Receipt*\n\n` +
+      : `*${business.name} - Payment Receipt*\n\n` +
         `Dear ${receiptData.customerName},\n` +
         `Received payment of *₹${receiptData.amount}* via *${receiptData.mode}*.\n` +
         `Remaining balance: *₹${receiptData.remaining}*.\n\n` +
@@ -111,9 +171,20 @@ export const PaymentsView: React.FC = () => {
         </p>
       </div>
 
-      {/* Collect Payment Card Form */}
+      {/* Summary highlight pill */}
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="p-2.5 rounded-2xl bg-green-50 border border-green-200 flex items-center justify-between">
+          <span className="text-gray-600 font-medium">{isMr ? 'आज जमा' : 'Collected'}:</span>
+          <span className="font-extrabold text-success-700">{formatCurrency(totalCollectedPeriod)}</span>
+        </div>
+        <div className="p-2.5 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-between">
+          <span className="text-gray-600 font-medium">{isMr ? 'एकूण बाकी' : 'Total Due'}:</span>
+          <span className="font-extrabold text-danger-600">{formatCurrency(totalUdhariAll)}</span>
+        </div>
+      </div>
+
+      {/* Collect Payment Form */}
       <form onSubmit={handleSavePayment} className="bg-white p-4 rounded-3xl border border-surface-border shadow-card space-y-3">
-        {/* Customer Selector */}
         <div>
           <label className="text-xs font-bold text-gray-700 block mb-1 flex items-center gap-1.5">
             <UserCheck className="w-4 h-4 text-brand-700" />
@@ -162,7 +233,6 @@ export const PaymentsView: React.FC = () => {
           </div>
         )}
 
-        {/* Amount Input with Quick Presets */}
         <div>
           <label className="text-xs font-bold text-gray-700 block mb-1">
             {isMr ? 'जमा रक्कम (₹) *' : 'Amount Received (₹) *'}
@@ -173,13 +243,13 @@ export const PaymentsView: React.FC = () => {
               type="number"
               min="1"
               required
-              value={amount}
+              value={amount || ''}
               onChange={(e) => setAmount(Number(e.target.value))}
+              placeholder="0"
               className="w-full pl-8 pr-3 py-2.5 text-base font-extrabold text-success-700 rounded-2xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-success-500"
             />
           </div>
 
-          {/* Quick presets */}
           <div className="flex items-center gap-1.5 mt-2">
             {[100, 200, 500, 1000].map((preset) => (
               <button
@@ -201,7 +271,6 @@ export const PaymentsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Payment Mode Selector */}
         <div>
           <label className="text-xs font-bold text-gray-700 block mb-1">
             {isMr ? 'पेमेंट प्रकार (Mode)' : 'Payment Mode'}
@@ -252,12 +321,11 @@ export const PaymentsView: React.FC = () => {
               }`}
             >
               <Building className="w-4 h-4" />
-              <span>{isMr ? 'बँक ट्रान्सफर' : 'Bank'}</span>
+              <span>{isMr ? 'बँक' : 'Bank'}</span>
             </button>
           </div>
         </div>
 
-        {/* Balance Preview */}
         <div className="p-3 rounded-2xl bg-gray-50 border border-gray-200 text-xs flex items-center justify-between">
           <span className="text-gray-600">{isMr ? 'जमानंतर शिल्लक उधारी:' : 'Remaining Balance:'}</span>
           <span className="font-extrabold text-sm text-gray-900">
@@ -265,10 +333,12 @@ export const PaymentsView: React.FC = () => {
           </span>
         </div>
 
-        {/* Submit */}
         <button
           type="submit"
-          className="w-full min-h-[50px] rounded-2xl bg-success-600 hover:bg-success-700 active-press text-white text-sm font-extrabold shadow-button flex items-center justify-center gap-2"
+          disabled={amount <= 0}
+          className={`w-full min-h-[50px] rounded-2xl active-press text-white text-sm font-extrabold shadow-button flex items-center justify-center gap-2 ${
+            amount <= 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-success-600 hover:bg-success-700'
+          }`}
         >
           <CheckCircle2 className="w-5 h-5" />
           <span>{isMr ? 'पेमेंट नोंद करा व पावती द्या' : 'Save Payment & Create Receipt'}</span>
@@ -281,11 +351,19 @@ export const PaymentsView: React.FC = () => {
           {isMr ? 'अलीकडील जमा पावत्या' : 'Recent Payment Collections'}
         </h3>
 
-        <div className="divide-y divide-gray-100 text-xs">
-          {payments.length === 0 ? (
-            <p className="text-gray-400 py-4 text-center">{isMr ? 'अजून जमा नाही' : 'No payments yet'}</p>
-          ) : (
-            payments.slice(0, 8).map((pay) => (
+        {payments.length === 0 ? (
+          <div className="text-center py-6 text-xs text-gray-400 space-y-1">
+            <Receipt className="w-6 h-6 mx-auto text-gray-300" />
+            <p className="font-medium text-gray-500">
+              {isMr ? 'अद्याप कोणतेही पेमेंट नोंदवलेले नाही.' : 'No payments collected yet.'}
+            </p>
+            <p className="text-[11px] text-gray-400">
+              {isMr ? 'ग्राहकाकडून रक्कम मिळाल्यावर येथे पावती दिसेल' : 'Payment receipts will appear here'}
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100 text-xs">
+            {payments.slice(0, 8).map((pay) => (
               <div key={pay.id} className="py-2.5 flex items-center justify-between">
                 <div>
                   <h4 className="font-bold text-gray-900">{pay.customerName}</h4>
@@ -302,9 +380,9 @@ export const PaymentsView: React.FC = () => {
                   </span>
                 </div>
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* RECEIPT POPUP */}
@@ -337,7 +415,6 @@ export const PaymentsView: React.FC = () => {
               </div>
             </div>
 
-            {/* WhatsApp Receipt Button */}
             <button
               onClick={handleWhatsAppReceipt}
               className="w-full py-2.5 rounded-2xl bg-green-600 hover:bg-green-700 text-white font-bold text-xs flex items-center justify-center gap-2 active-press shadow-sm"

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { AddCustomerModal } from '../customers/AddCustomerModal';
 import {
   CheckCircle2,
   Plus,
@@ -8,6 +9,9 @@ import {
   Sparkles,
   UserCheck,
   Search,
+  AlertTriangle,
+  UserPlus,
+  Package,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { formatCurrency, createWhatsAppMessage } from '../../utils/formatters';
@@ -16,14 +20,18 @@ import { sound } from '../../utils/sound';
 export const DailyEntryView: React.FC = () => {
   const {
     customers,
-    settings,
+    business,
+    availableJars,
     selectedCustomerId,
     setSelectedCustomerId,
     addTransaction,
     setActiveTab,
+    setJarModalOpen,
   } = useApp();
 
-  const isMr = settings.language === 'mr';
+  const isMr = business.language === 'mr';
+
+  const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
 
   // Selected customer state
   const [customerId, setCustomerId] = useState<string>(
@@ -32,14 +40,17 @@ export const DailyEntryView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
 
-  // Transaction form state
-  const [jarsGiven, setJarsGiven] = useState<number>(5);
-  const [jarsReturned, setJarsReturned] = useState<number>(5);
-  const [ratePerJar, setRatePerJar] = useState<number>(settings.defaultJarRate || 35);
+  // Transaction form state (defaults to 1 if available, otherwise 0)
+  const [jarsGiven, setJarsGiven] = useState<number>(() => (availableJars > 0 ? 1 : 0));
+  const [jarsReturned, setJarsReturned] = useState<number>(0);
+  const [ratePerJar, setRatePerJar] = useState<number>(business.defaultJarRate || 35);
   const [paymentChoice, setPaymentChoice] = useState<'CASH' | 'UPI' | 'UDHARI' | 'SPLIT'>('CASH');
-  const [cashPaid, setCashPaid] = useState<number>(175);
+  const [cashPaid, setCashPaid] = useState<number>(0);
   const [upiPaid, setUpiPaid] = useState<number>(0);
   const [notes, setNotes] = useState<string>('');
+
+  // Inline validation error message
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Post-save modal / snackbar
   const [savedTx, setSavedTx] = useState<{
@@ -56,21 +67,23 @@ export const DailyEntryView: React.FC = () => {
   // Find active customer object
   const currentCustomer = customers.find((c) => c.id === customerId);
 
-  // Sync selectedCustomerId from outside (e.g. from Dashboard or Customer list)
+  // Sync selectedCustomerId from outside
   useEffect(() => {
     if (selectedCustomerId) {
       setCustomerId(selectedCustomerId);
+    } else if (customers.length > 0 && !customerId) {
+      setCustomerId(customers[0].id);
     }
-  }, [selectedCustomerId]);
+  }, [selectedCustomerId, customers, customerId]);
 
   // Update default rate if customer has custom rate
   useEffect(() => {
     if (currentCustomer?.defaultRate) {
       setRatePerJar(currentCustomer.defaultRate);
     } else {
-      setRatePerJar(settings.defaultJarRate || 35);
+      setRatePerJar(business.defaultJarRate || 35);
     }
-  }, [customerId, currentCustomer, settings.defaultJarRate]);
+  }, [customerId, currentCustomer, business.defaultJarRate]);
 
   // Auto calculate bill and adjust payment amounts
   const billAmount = jarsGiven * ratePerJar;
@@ -102,21 +115,84 @@ export const DailyEntryView: React.FC = () => {
       c.area.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // CASE 1: NO CUSTOMERS IN SYSTEM
+  if (customers.length === 0) {
+    return (
+      <div className="pb-28 pt-8 px-4 max-w-md mx-auto text-center space-y-4 animate-fade-in">
+        <div className="w-16 h-16 rounded-3xl bg-blue-100 text-brand-800 mx-auto flex items-center justify-center shadow-soft">
+          <UserPlus className="w-8 h-8" />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-base font-extrabold text-gray-900">
+            {isMr ? 'पहिले ग्राहक जोडा' : 'Add Customers First'}
+          </h3>
+          <p className="text-xs text-gray-500 max-w-xs mx-auto">
+            {isMr
+              ? 'दैनिक जार वाटपाची नोंद करण्यासाठी तुमच्याकडे किमान एक ग्राहक असणे आवश्यक आहे.'
+              : 'You need at least one customer in your account before recording deliveries.'}
+          </p>
+        </div>
+
+        <button
+          onClick={() => {
+            sound.playClick();
+            setIsAddCustomerOpen(true);
+          }}
+          className="w-full py-3 px-4 rounded-2xl bg-brand-800 hover:bg-brand-900 active-press text-white text-xs font-bold shadow-button flex items-center justify-center gap-2"
+        >
+          <UserPlus className="w-4 h-4" />
+          <span>{isMr ? 'ग्राहक जोडण्यास जा' : 'Add First Customer'}</span>
+        </button>
+
+        <AddCustomerModal
+          isOpen={isAddCustomerOpen}
+          onClose={() => setIsAddCustomerOpen(false)}
+        />
+      </div>
+    );
+  }
+
   const handleSave = () => {
-    if (!currentCustomer) return;
+    setValidationError(null);
 
-    sound.playSuccess();
-    sound.vibrate(40);
+    if (!currentCustomer) {
+      setValidationError(isMr ? 'कृपया ग्राहक निवडा' : 'Please select a customer');
+      return;
+    }
 
-    // Fire celebratory confetti!
-    confetti({
-      particleCount: 50,
-      spread: 60,
-      origin: { y: 0.7 },
-      colors: ['#1E40AF', '#16A34A', '#F59E0B'],
-    });
+    // STRICT VALIDATION 1: Jars Given cannot exceed Available Jars
+    if (jarsGiven > availableJars) {
+      sound.playWarning();
+      setValidationError(
+        isMr
+          ? `गोदाममध्ये पुरेसे जार उपलब्ध नाहीत! उपलब्ध जार फक्त ${availableJars} आहेत.`
+          : `Not enough jars in stock! Available jars: only ${availableJars}.`
+      );
+      return;
+    }
 
-    const tx = addTransaction({
+    // STRICT VALIDATION 2: Jars Returned cannot exceed customer jars
+    if (jarsReturned > currentCustomer.currentJars) {
+      sound.playWarning();
+      setValidationError(
+        isMr
+          ? `ग्राहकाकडे फक्त ${currentCustomer.currentJars} जार आहेत, त्यापेक्षा जास्त परत घेता येणार नाहीत.`
+          : `Customer currently has only ${currentCustomer.currentJars} jars.`
+      );
+      return;
+    }
+
+    if (jarsGiven === 0 && jarsReturned === 0) {
+      sound.playWarning();
+      setValidationError(
+        isMr
+          ? 'किमान १ जार देणे किंवा घेणे आवश्यक आहे.'
+          : 'Please enter at least 1 jar given or returned.'
+      );
+      return;
+    }
+
+    const res = addTransaction({
       customerId: currentCustomer.id,
       jarsGiven,
       jarsReturned,
@@ -127,8 +203,20 @@ export const DailyEntryView: React.FC = () => {
       notes,
     });
 
+    if (!res.success) {
+      setValidationError(res.error || 'त्रुटी आढळली');
+      return;
+    }
+
+    confetti({
+      particleCount: 50,
+      spread: 60,
+      origin: { y: 0.7 },
+      colors: ['#1E40AF', '#16A34A', '#F59E0B'],
+    });
+
     setSavedTx({
-      id: tx.id,
+      id: res.transaction!.id,
       customerName: currentCustomer.name,
       mobile: currentCustomer.mobile,
       given: jarsGiven,
@@ -141,28 +229,69 @@ export const DailyEntryView: React.FC = () => {
 
   const handleResetForNext = () => {
     setSavedTx(null);
-    setJarsGiven(5);
-    setJarsReturned(5);
+    setJarsGiven(availableJars > 0 ? 1 : 0);
+    setJarsReturned(0);
     setNotes('');
+    setValidationError(null);
   };
 
   return (
     <div className="pb-28 pt-2 px-3.5 max-w-lg mx-auto space-y-3.5 animate-fade-in">
-      {/* Title & Speed Guarantee Badge */}
+      {/* Title */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-1.5">
             <Sparkles className="w-5 h-5 text-brand-600" />
-            {isMr ? 'दैनिक नोंद (सुपरफास्ट)' : 'Daily Speed Entry'}
+            {isMr ? 'दैनिक नोंद' : 'Daily Speed Entry'}
           </h2>
           <p className="text-xs text-gray-500 font-medium">
-            {isMr ? '३ सेकंदात नोंद: जार दिले/घेतले + हिशोब' : '3-Second Workflow: Jars + Payment'}
+            {isMr ? 'जार दिले/घेतले + हिशोब नोंद' : 'Record jar given, returned, and payment'}
           </p>
         </div>
-        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-success-700">
-          ⚡ 5s Save
-        </span>
+
+        {/* Live available jars indicator */}
+        <button
+          onClick={() => {
+            sound.playClick();
+            setJarModalOpen(true);
+          }}
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border active-press ${
+            availableJars > 0
+              ? 'bg-green-50 text-success-700 border-green-200'
+              : 'bg-red-50 text-danger-700 border-red-200 animate-pulse'
+          }`}
+        >
+          <Package className="w-3.5 h-3.5" />
+          <span>{availableJars} {isMr ? 'शिल्लक' : 'stock'}</span>
+        </button>
       </div>
+
+      {/* Validation Warning Notice if any */}
+      {validationError && (
+        <div className="p-3 rounded-2xl bg-red-50 border border-red-300 text-xs font-bold text-danger-700 flex items-center gap-2 animate-fade-in">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{validationError}</span>
+        </div>
+      )}
+
+      {/* Warning if Available Jars is 0 */}
+      {availableJars === 0 && (
+        <div className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-xs text-amber-900 flex items-center justify-between gap-2 animate-fade-in">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{isMr ? 'सध्या उपलब्ध जार नाहीत (0 Jars in Godown).' : 'No jars available in godown.'}</span>
+          </div>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setJarModalOpen(true);
+            }}
+            className="px-2 py-1 rounded-lg bg-amber-600 text-white font-bold text-[11px] active-press shrink-0"
+          >
+            {isMr ? '+ जार जोडा' : '+ Add Jars'}
+          </button>
+        </div>
+      )}
 
       {/* STEP 1: Select Customer */}
       <div className="bg-white p-3.5 rounded-3xl border border-surface-border shadow-card space-y-2.5">
@@ -185,7 +314,6 @@ export const DailyEntryView: React.FC = () => {
           </button>
         </div>
 
-        {/* Currently Selected Customer Pill */}
         {currentCustomer && !showCustomerPicker && (
           <div
             onClick={() => setShowCustomerPicker(true)}
@@ -206,7 +334,6 @@ export const DailyEntryView: React.FC = () => {
           </div>
         )}
 
-        {/* Searchable customer picker drawer */}
         {showCustomerPicker && (
           <div className="space-y-2 animate-fade-in pt-1">
             <div className="relative">
@@ -256,7 +383,7 @@ export const DailyEntryView: React.FC = () => {
         )}
       </div>
 
-      {/* STEP 2: Quantity Controls - Jars Given & Jars Returned */}
+      {/* STEP 2: Quantity Controls */}
       <div className="grid grid-cols-2 gap-3">
         {/* Given Stepper */}
         <div className="bg-white p-3.5 rounded-3xl border border-surface-border shadow-card flex flex-col justify-between">
@@ -274,7 +401,6 @@ export const DailyEntryView: React.FC = () => {
             </p>
           </div>
 
-          {/* Stepper buttons */}
           <div className="flex items-center justify-between gap-1 my-1">
             <button
               onClick={() => {
@@ -293,6 +419,16 @@ export const DailyEntryView: React.FC = () => {
             <button
               onClick={() => {
                 sound.playClick();
+                if (jarsGiven >= availableJars) {
+                  sound.playWarning();
+                  setValidationError(
+                    isMr
+                      ? `गोदाममध्ये फक्त ${availableJars} जार शिल्लक आहेत!`
+                      : `Only ${availableJars} jars available in stock!`
+                  );
+                  return;
+                }
+                setValidationError(null);
                 setJarsGiven((prev) => prev + 1);
               }}
               className="w-12 h-12 rounded-2xl bg-blue-50 hover:bg-blue-100 active-press flex items-center justify-center text-brand-800 text-lg font-bold"
@@ -301,13 +437,23 @@ export const DailyEntryView: React.FC = () => {
             </button>
           </div>
 
-          {/* Quick Preset Pills */}
           <div className="flex items-center justify-between gap-1 mt-2">
             {[1, 2, 5, 10].map((num) => (
               <button
                 key={num}
                 onClick={() => {
                   sound.playClick();
+                  if (num > availableJars) {
+                    sound.playWarning();
+                    setValidationError(
+                      isMr
+                        ? `गोदाममध्ये फक्त ${availableJars} जार शिल्लक आहेत!`
+                        : `Only ${availableJars} jars available in stock!`
+                    );
+                    setJarsGiven(availableJars);
+                    return;
+                  }
+                  setValidationError(null);
                   setJarsGiven(num);
                 }}
                 className={`flex-1 py-1 rounded-lg text-xs font-bold transition active-press ${
@@ -338,7 +484,6 @@ export const DailyEntryView: React.FC = () => {
             </p>
           </div>
 
-          {/* Stepper buttons */}
           <div className="flex items-center justify-between gap-1 my-1">
             <button
               onClick={() => {
@@ -357,6 +502,17 @@ export const DailyEntryView: React.FC = () => {
             <button
               onClick={() => {
                 sound.playClick();
+                const maxHold = currentCustomer?.currentJars || 0;
+                if (jarsReturned >= maxHold) {
+                  sound.playWarning();
+                  setValidationError(
+                    isMr
+                      ? `ग्राहकाकडे फक्त ${maxHold} जार आहेत!`
+                      : `Customer only holds ${maxHold} jars!`
+                  );
+                  return;
+                }
+                setValidationError(null);
                 setJarsReturned((prev) => prev + 1);
               }}
               className="w-12 h-12 rounded-2xl bg-green-50 hover:bg-green-100 active-press flex items-center justify-center text-success-600 text-lg font-bold"
@@ -365,13 +521,18 @@ export const DailyEntryView: React.FC = () => {
             </button>
           </div>
 
-          {/* Quick Preset Pills */}
           <div className="flex items-center justify-between gap-1 mt-2">
-            {[0, 2, 5, 10].map((num) => (
+            {[0, 1, 2, 5].map((num) => (
               <button
                 key={num}
                 onClick={() => {
                   sound.playClick();
+                  const maxHold = currentCustomer?.currentJars || 0;
+                  if (num > maxHold) {
+                    setJarsReturned(maxHold);
+                    return;
+                  }
+                  setValidationError(null);
                   setJarsReturned(num);
                 }}
                 className={`flex-1 py-1 rounded-lg text-xs font-bold transition active-press ${
@@ -422,7 +583,6 @@ export const DailyEntryView: React.FC = () => {
         </label>
 
         <div className="grid grid-cols-3 gap-2">
-          {/* Full Cash */}
           <button
             onClick={() => {
               sound.playClick();
@@ -438,7 +598,6 @@ export const DailyEntryView: React.FC = () => {
             <span className="text-[11px] opacity-90">{formatCurrency(billAmount)}</span>
           </button>
 
-          {/* Full UPI */}
           <button
             onClick={() => {
               sound.playClick();
@@ -454,7 +613,6 @@ export const DailyEntryView: React.FC = () => {
             <span className="text-[11px] opacity-90">{formatCurrency(billAmount)}</span>
           </button>
 
-          {/* Full Udhari */}
           <button
             onClick={() => {
               sound.playClick();
@@ -471,7 +629,6 @@ export const DailyEntryView: React.FC = () => {
           </button>
         </div>
 
-        {/* If Udhari / Split selected, show remaining balance projection */}
         {udhariAmount > 0 && (
           <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200/80 text-xs text-amber-900 flex items-center justify-between">
             <span>{isMr ? 'ग्राहक खात्यात नवीन उधारी जमा होईल:' : 'Added to customer credit:'}</span>
@@ -483,13 +640,18 @@ export const DailyEntryView: React.FC = () => {
       {/* STEP 5: Big Tactile Save Button */}
       <button
         onClick={handleSave}
-        className="w-full min-h-[54px] rounded-2xl bg-brand-800 hover:bg-brand-900 active-press text-white text-base font-extrabold shadow-button flex items-center justify-center gap-2"
+        disabled={availableJars === 0 && jarsGiven > 0}
+        className={`w-full min-h-[54px] rounded-2xl active-press text-white text-base font-extrabold shadow-button flex items-center justify-center gap-2 ${
+          availableJars === 0 && jarsGiven > 0
+            ? 'bg-gray-400 cursor-not-allowed'
+            : 'bg-brand-800 hover:bg-brand-900'
+        }`}
       >
         <CheckCircle2 className="w-5 h-5 stroke-[2.5]" />
         <span>{isMr ? 'नोंद पूर्ण करा (सेव्ह करा)' : 'Save Daily Entry (⚡ 3s)'}</span>
       </button>
 
-      {/* SUCCESS MODAL / SHEET AFTER SAVING */}
+      {/* SUCCESS MODAL */}
       {savedTx && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-fade-in">
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-sheet space-y-4 animate-slide-up">
@@ -504,7 +666,6 @@ export const DailyEntryView: React.FC = () => {
               <p className="text-xs text-gray-500 mt-0.5">{savedTx.customerName}</p>
             </div>
 
-            {/* Quick Summary Pill */}
             <div className="bg-gray-50 p-3 rounded-2xl border border-gray-200 text-xs space-y-1.5">
               <div className="flex justify-between">
                 <span className="text-gray-500">{isMr ? 'दिलेले / जमा' : 'Given / Returned'}:</span>
@@ -530,11 +691,10 @@ export const DailyEntryView: React.FC = () => {
               </div>
             </div>
 
-            {/* Direct WhatsApp Share Action */}
             <a
               href={`https://wa.me/91${savedTx.mobile}?text=${createWhatsAppMessage(
                 savedTx.customerName,
-                settings.businessName,
+                business.name,
                 {
                   given: savedTx.given,
                   returned: savedTx.returned,
@@ -553,7 +713,6 @@ export const DailyEntryView: React.FC = () => {
               <span>{isMr ? 'व्हॉट्सअ‍ॅपवर पावती पाठवा' : 'Send WhatsApp Receipt'}</span>
             </a>
 
-            {/* Done / Next Entry Buttons */}
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
                 onClick={() => {

@@ -8,24 +8,25 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * Immutable Ledger history for audit trails and statement generation.
+     * Immutable Ledger history for audit trails (tenant-scoped).
      */
     public function up(): void
     {
         Schema::create('ledgers', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('customer_id')->constrained('customers')->cascadeOnDelete();
+            $table->foreignUuid('business_id')->constrained('businesses')->cascadeOnDelete()->index();
+            $table->foreignUuid('customer_id')->constrained('customers')->cascadeOnDelete()->index();
             $table->date('entry_date')->index();
             $table->enum('entry_type', ['TRANSACTION', 'PAYMENT'])->index();
-            $table->uuid('source_id')->nullable(); // transaction_id or payment_id
+            $table->uuid('source_id')->nullable();
             
             $table->integer('jars_given')->default(0);
             $table->integer('jars_returned')->default(0);
             $table->integer('net_jars')->default(0);
             
-            $table->decimal('debit_amount', 12, 2)->default(0.00); // New udhari added
-            $table->decimal('credit_amount', 12, 2)->default(0.00); // Payment received
-            $table->decimal('balance_after', 12, 2)->default(0.00); // Running udhari balance
+            $table->decimal('debit_amount', 12, 2)->default(0.00);
+            $table->decimal('credit_amount', 12, 2)->default(0.00);
+            $table->decimal('balance_after', 12, 2)->default(0.00);
             
             $table->string('description')->nullable();
             $table->timestamps();

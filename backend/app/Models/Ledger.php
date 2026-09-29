@@ -11,6 +11,7 @@ class Ledger extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
+        'business_id',
         'customer_id',
         'entry_date',
         'entry_type',
@@ -33,6 +34,11 @@ class Ledger extends Model
         'credit_amount' => 'decimal:2',
         'balance_after' => 'decimal:2',
     ];
+
+    public function business()
+    {
+        return $this->belongsTo(Business::class);
+    }
 
     public function customer()
     {

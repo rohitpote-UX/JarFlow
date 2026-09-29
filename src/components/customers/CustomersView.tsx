@@ -146,7 +146,31 @@ export const CustomersView: React.FC = () => {
 
       {/* Customer Cards List */}
       <div className="space-y-2.5">
-        {filteredCustomers.length === 0 ? (
+        {customers.length === 0 ? (
+          <div className="bg-white p-8 rounded-3xl border border-gray-200 text-center space-y-3 shadow-card animate-fade-in">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-brand-800 mx-auto flex items-center justify-center">
+              <UserPlus className="w-6 h-6 stroke-[2.2]" />
+            </div>
+            <div>
+              <h3 className="text-sm font-extrabold text-gray-900">
+                {isMr ? 'अजून कोणतेही ग्राहक नाहीत' : 'No customers added yet'}
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {isMr ? 'तुमचा पहिला ग्राहक जोडून सुरुवात करा.' : 'Create your first customer profile to begin.'}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                sound.playClick();
+                setIsAddModalOpen(true);
+              }}
+              className="py-2.5 px-4 rounded-2xl bg-brand-800 hover:bg-brand-900 text-white font-bold text-xs shadow-button active-press inline-flex items-center gap-1.5"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>{isMr ? '+ नवीन ग्राहक' : '+ Add New Customer'}</span>
+            </button>
+          </div>
+        ) : filteredCustomers.length === 0 ? (
           <div className="bg-white p-8 rounded-3xl border border-gray-200 text-center text-xs text-gray-400">
             <Filter className="w-8 h-8 mx-auto text-gray-300 mb-2" />
             <span>{isMr ? 'कोणतेही ग्राहक सापडले नाहीत.' : 'No customers matched your filter.'}</span>

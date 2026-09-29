@@ -182,9 +182,14 @@ export const ReportsView: React.FC = () => {
 
             <div className="divide-y divide-gray-100 text-xs">
               {todayTransactions.length === 0 ? (
-                <p className="text-center py-6 text-gray-400">
-                  {isMr ? 'आज अजून कोणतीही नोंद झालेली नाही.' : 'No transactions recorded today.'}
-                </p>
+                <div className="text-center py-10 text-xs text-gray-500 space-y-1">
+                  <p className="font-bold text-gray-700">
+                    {isMr ? 'या कालावधीसाठी कोणताही transaction उपलब्ध नाही.' : 'No transactions recorded for this period.'}
+                  </p>
+                  <p className="text-[11px] text-gray-400">
+                    {isMr ? 'नवीन नोंदी केल्यानंतर अहवाल येथे अद्ययावत होईल.' : 'Daily delivery logs will appear here.'}
+                  </p>
+                </div>
               ) : (
                 todayTransactions.map((tx) => (
                   <div key={tx.id} className="py-2.5 flex items-center justify-between">

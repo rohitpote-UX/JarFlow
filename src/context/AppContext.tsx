@@ -1,21 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import {
+  Business,
   Customer,
   Jar,
   JarTransaction,
   Payment,
-  BusinessSettings,
   AppNotification,
   AppTab,
   TimeFilter,
   LedgerEntry,
   JarStatus,
+  BusinessSettings,
 } from '../types';
-import {
-  storage,
-  defaultCustomers,
-  defaultSettings,
-} from '../utils/storage';
+import { storage, createFreshBusiness } from '../utils/storage';
 import {
   isToday,
   isYesterday,
@@ -25,11 +22,12 @@ import {
 import { sound } from '../utils/sound';
 
 interface AppContextType {
+  business: Business;
+  settings: BusinessSettings; // compatibility bridge
   customers: Customer[];
   transactions: JarTransaction[];
   payments: Payment[];
   jars: Jar[];
-  settings: BusinessSettings;
   notifications: AppNotification[];
   activeTab: AppTab;
   setActiveTab: (tab: AppTab) => void;
@@ -49,7 +47,7 @@ interface AppContextType {
   notificationsModalOpen: boolean;
   setNotificationsModalOpen: (val: boolean) => void;
 
-  // Smart calculations
+  // Smart dynamic calculations (derived from real records only)
   totalJars: number;
   customerJars: number;
   damagedJars: number;
@@ -64,6 +62,11 @@ interface AppContextType {
   totalUdhariAll: number;
 
   // Actions
+  updateBusiness: (patch: Partial<Business>) => void;
+  completeOnboarding: (initialJars: number, defaultRate: number) => void;
+  setInitialInventory: (totalJars: number) => void;
+  resetToEmptyBusiness: () => void;
+
   addTransaction: (data: {
     customerId: string;
     jarsGiven: number;
@@ -73,7 +76,7 @@ interface AppContextType {
     upiPaid: number;
     paymentMode: 'CASH' | 'UPI' | 'SPLIT' | 'UDHARI' | 'NONE';
     notes?: string;
-  }) => JarTransaction;
+  }) => { success: boolean; error?: string; transaction?: JarTransaction };
 
   addPayment: (data: {
     customerId: string;
@@ -83,7 +86,7 @@ interface AppContextType {
     notes?: string;
   }) => Payment;
 
-  addCustomer: (data: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>) => Customer;
+  addCustomer: (data: Omit<Customer, 'id' | 'businessId' | 'createdAt' | 'updatedAt'>) => Customer;
   updateCustomer: (id: string, data: Partial<Customer>) => void;
   deleteCustomer: (id: string) => void;
   getCustomerLedger: (customerId: string) => LedgerEntry[];
@@ -97,12 +100,17 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [customers, setCustomers] = useState<Customer[]>(() => storage.getCustomers());
-  const [transactions, setTransactions] = useState<JarTransaction[]>(() => storage.getTransactions());
-  const [payments, setPayments] = useState<Payment[]>(() => storage.getPayments());
-  const [jars, setJars] = useState<Jar[]>(() => storage.getJars());
-  const [settings, setSettings] = useState<BusinessSettings>(() => storage.getSettings());
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => storage.getNotifications());
+  const [activeBusinessId] = useState<string>(() => storage.getActiveBusinessId());
+
+  // Business state
+  const [business, setBusiness] = useState<Business>(() => storage.getBusiness(activeBusinessId));
+
+  // Entities scoped to active business (strictly empty for new business!)
+  const [customers, setCustomers] = useState<Customer[]>(() => storage.getCustomers(activeBusinessId));
+  const [transactions, setTransactions] = useState<JarTransaction[]>(() => storage.getTransactions(activeBusinessId));
+  const [payments, setPayments] = useState<Payment[]>(() => storage.getPayments(activeBusinessId));
+  const [jars, setJars] = useState<Jar[]>(() => storage.getJars(activeBusinessId));
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => storage.getNotifications(activeBusinessId));
 
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -116,30 +124,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [notificationsModalOpen, setNotificationsModalOpen] = useState(false);
 
-  // Sync with localStorage
+  // Persist to tenant-scoped localStorage
   useEffect(() => {
-    storage.saveCustomers(customers);
-  }, [customers]);
+    storage.saveBusiness(business);
+  }, [business]);
 
   useEffect(() => {
-    storage.saveTransactions(transactions);
-  }, [transactions]);
+    storage.saveCustomers(activeBusinessId, customers);
+  }, [customers, activeBusinessId]);
 
   useEffect(() => {
-    storage.savePayments(payments);
-  }, [payments]);
+    storage.saveTransactions(activeBusinessId, transactions);
+  }, [transactions, activeBusinessId]);
 
   useEffect(() => {
-    storage.saveJars(jars);
-  }, [jars]);
+    storage.savePayments(activeBusinessId, payments);
+  }, [payments, activeBusinessId]);
 
   useEffect(() => {
-    storage.saveSettings(settings);
-  }, [settings]);
+    storage.saveJars(activeBusinessId, jars);
+  }, [jars, activeBusinessId]);
 
   useEffect(() => {
-    storage.saveNotifications(notifications);
-  }, [notifications]);
+    storage.saveNotifications(activeBusinessId, notifications);
+  }, [notifications, activeBusinessId]);
 
   // Online / offline listener
   useEffect(() => {
@@ -166,7 +174,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   }, [transactions, timeFilter]);
 
-  // Filtered payments based on active time filter
   const filteredPayments = useMemo(() => {
     return payments.filter((p) => {
       if (timeFilter === 'today') return isToday(p.date);
@@ -177,8 +184,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   }, [payments, timeFilter]);
 
-  // Smart calculations
-  const totalJars = settings.totalGodownJars;
+  // Dynamic calculations strictly from real records
+  const totalJars = business.totalGodownJars || 0;
 
   const customerJars = useMemo(() => {
     return customers.reduce((sum, c) => sum + (c.currentJars || 0), 0);
@@ -228,7 +235,58 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return customers.reduce((sum, c) => sum + (c.pendingAmount || 0), 0);
   }, [customers]);
 
-  // Actions
+  // Compatibility settings object
+  const settings: BusinessSettings = useMemo(
+    () => ({
+      businessName: business.name || 'माझा वॉटर व्यवसाय',
+      ownerName: business.ownerName || '',
+      phone: business.phone || '',
+      upiId: business.upiId || '',
+      address: business.address || '',
+      defaultJarRate: business.defaultJarRate || 35,
+      totalGodownJars: business.totalGodownJars || 0,
+      lowStockThreshold: business.lowStockThreshold || 20,
+      language: business.language || 'mr',
+    }),
+    [business]
+  );
+
+  // Business Actions
+  const updateBusiness = (patch: Partial<Business>) => {
+    setBusiness((prev) => ({ ...prev, ...patch }));
+  };
+
+  const completeOnboarding = (initialJars: number, defaultRate: number) => {
+    setBusiness((prev) => ({
+      ...prev,
+      name: prev.name || 'माझा वॉटर व्यवसाय',
+      totalGodownJars: Math.max(0, initialJars),
+      defaultJarRate: defaultRate || 35,
+      onboardingCompleted: true,
+    }));
+  };
+
+  const setInitialInventory = (jarCount: number) => {
+    setBusiness((prev) => ({
+      ...prev,
+      totalGodownJars: Math.max(0, jarCount),
+    }));
+    sound.playSuccess();
+  };
+
+  const resetToEmptyBusiness = () => {
+    storage.clearBusinessData(activeBusinessId);
+    const fresh = createFreshBusiness(activeBusinessId);
+    setBusiness(fresh);
+    setCustomers([]);
+    setTransactions([]);
+    setPayments([]);
+    setJars([]);
+    setNotifications(storage.getNotifications(activeBusinessId));
+    sound.playClick();
+  };
+
+  // Transaction with Strict Inventory Validation (No Negative Inventory)
   const addTransaction = (data: {
     customerId: string;
     jarsGiven: number;
@@ -238,10 +296,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     upiPaid: number;
     paymentMode: 'CASH' | 'UPI' | 'SPLIT' | 'UDHARI' | 'NONE';
     notes?: string;
-  }): JarTransaction => {
+  }): { success: boolean; error?: string; transaction?: JarTransaction } => {
     const customer = customers.find((c) => c.id === data.customerId);
-    const customerName = customer ? customer.name : 'Unknown Customer';
-    const customerMobile = customer ? customer.mobile : '';
+    if (!customer) {
+      return { success: false, error: 'पहिले ग्राहक निवडा (Please select a customer).' };
+    }
+
+    // STRICT VALIDATION: No Negative Inventory
+    if (data.jarsGiven > availableJars) {
+      sound.playWarning();
+      return {
+        success: false,
+        error: `गोदाममध्ये पुरेसे जार उपलब्ध नाहीत! सध्या फक्त ${availableJars} जार शिल्लक आहेत. (Available: ${availableJars})`,
+      };
+    }
+
+    // STRICT VALIDATION: Customer cannot return more jars than they hold
+    if (data.jarsReturned > customer.currentJars) {
+      sound.playWarning();
+      return {
+        success: false,
+        error: `ग्राहकाकडे फक्त ${customer.currentJars} जार आहेत, त्यापेक्षा जास्त परत घेता येणार नाहीत. (Customer only holds ${customer.currentJars} jars)`,
+      };
+    }
 
     const billAmount = data.jarsGiven * data.ratePerJar;
     const totalPaid = data.cashPaid + data.upiPaid;
@@ -250,9 +327,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const newTx: JarTransaction = {
       id: `tx-${Date.now()}`,
+      businessId: activeBusinessId,
       customerId: data.customerId,
-      customerName,
-      customerMobile,
+      customerName: customer.name,
+      customerMobile: customer.mobile,
       date: new Date().toISOString(),
       jarsGiven: data.jarsGiven,
       jarsReturned: data.jarsReturned,
@@ -269,7 +347,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
 
-    // Update customer balances immediately
+    // Update customer balances atomically
     setCustomers((prev) =>
       prev.map((c) => {
         if (c.id === data.customerId) {
@@ -288,11 +366,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setTransactions((prev) => [newTx, ...prev]);
 
-    // Sound and vibration feedback
     sound.playSuccess();
     sound.vibrate(30);
 
-    return newTx;
+    return { success: true, transaction: newTx };
   };
 
   const addPayment = (data: {
@@ -308,6 +385,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const newPayment: Payment = {
       id: `pay-${Date.now()}`,
+      businessId: activeBusinessId,
       customerId: data.customerId,
       customerName: customer ? customer.name : 'Customer',
       date: new Date().toISOString(),
@@ -321,7 +399,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       createdAt: new Date().toISOString(),
     };
 
-    // Update customer pending balance
     setCustomers((prev) =>
       prev.map((c) => {
         if (c.id === data.customerId) {
@@ -343,10 +420,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newPayment;
   };
 
-  const addCustomer = (data: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>): Customer => {
+  const addCustomer = (data: Omit<Customer, 'id' | 'businessId' | 'createdAt' | 'updatedAt'>): Customer => {
     const newCust: Customer = {
       ...data,
       id: `cust-${Date.now()}`,
+      businessId: activeBusinessId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -371,7 +449,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const custTxs = transactions.filter((t) => t.customerId === customerId);
     const custPays = payments.filter((p) => p.customerId === customerId);
 
-    // Merge transactions & payments into chronological order
     const rawEvents: Array<{
       date: string;
       type: 'TRANSACTION' | 'PAYMENT';
@@ -381,7 +458,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...custPays.map((p) => ({ date: p.date, type: 'PAYMENT' as const, item: p })),
     ];
 
-    // Sort ascending by date to calculate running balance
     rawEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     let runningBalance = 0;
@@ -394,6 +470,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         ledger.push({
           id: tx.id,
+          businessId: activeBusinessId,
+          customerId: tx.customerId,
           date: tx.date,
           type: 'TRANSACTION',
           description: `Given: ${tx.jarsGiven}, Returned: ${tx.jarsReturned}`,
@@ -413,6 +491,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         ledger.push({
           id: pay.id,
+          businessId: activeBusinessId,
+          customerId: pay.customerId,
           date: pay.date,
           type: 'PAYMENT',
           description: `Payment Received (${pay.paymentMode})`,
@@ -428,7 +508,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     });
 
-    // Return in reverse chronological order (newest first) for UI display
     return ledger.reverse();
   };
 
@@ -459,13 +538,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const num = String(startIndex + i).padStart(4, '0');
       newJars.push({
         id: `jar-${Date.now()}-${i}`,
+        businessId: activeBusinessId,
         serialNumber: `${prefix}-${num}`,
-        qrCode: `PUREFLOW-${prefix}-${num}`,
+        qrCode: `${business.name ? business.name.replace(/\s+/g, '-').toUpperCase() : 'JAR'}-${prefix}-${num}`,
         status: 'available',
       });
     }
     setJars((prev) => [...newJars, ...prev]);
-    setSettings((prev) => ({
+    setBusiness((prev) => ({
       ...prev,
       totalGodownJars: prev.totalGodownJars + count,
     }));
@@ -473,12 +553,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateSettings = (newSettings: Partial<BusinessSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
+    setBusiness((prev) => ({
+      ...prev,
+      name: newSettings.businessName !== undefined ? newSettings.businessName : prev.name,
+      ownerName: newSettings.ownerName !== undefined ? newSettings.ownerName : prev.ownerName,
+      phone: newSettings.phone !== undefined ? newSettings.phone : prev.phone,
+      upiId: newSettings.upiId !== undefined ? newSettings.upiId : prev.upiId,
+      address: newSettings.address !== undefined ? newSettings.address : prev.address,
+      defaultJarRate: newSettings.defaultJarRate !== undefined ? newSettings.defaultJarRate : prev.defaultJarRate,
+      totalGodownJars: newSettings.totalGodownJars !== undefined ? newSettings.totalGodownJars : prev.totalGodownJars,
+      lowStockThreshold: newSettings.lowStockThreshold !== undefined ? newSettings.lowStockThreshold : prev.lowStockThreshold,
+      language: newSettings.language !== undefined ? newSettings.language : prev.language,
+    }));
     sound.playClick();
   };
 
   const toggleLanguage = () => {
-    setSettings((prev) => ({
+    setBusiness((prev) => ({
       ...prev,
       language: prev.language === 'mr' ? 'en' : 'mr',
     }));
@@ -492,11 +583,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return (
     <AppContext.Provider
       value={{
+        business,
+        settings,
         customers,
         transactions,
         payments,
         jars,
-        settings,
         notifications,
         activeTab,
         setActiveTab,
@@ -516,7 +608,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         notificationsModalOpen,
         setNotificationsModalOpen,
 
-        // Calculations
+        // Real calculations
         totalJars,
         customerJars,
         damagedJars,
@@ -531,6 +623,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         totalUdhariAll,
 
         // Actions
+        updateBusiness,
+        completeOnboarding,
+        setInitialInventory,
+        resetToEmptyBusiness,
         addTransaction,
         addPayment,
         addCustomer,

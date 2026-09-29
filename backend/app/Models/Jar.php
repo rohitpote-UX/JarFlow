@@ -11,6 +11,7 @@ class Jar extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
+        'business_id',
         'serial_number',
         'qr_code',
         'status',
@@ -24,6 +25,11 @@ class Jar extends Model
         'date_given' => 'datetime',
         'date_returned' => 'datetime',
     ];
+
+    public function business()
+    {
+        return $this->belongsTo(Business::class);
+    }
 
     public function currentCustomer()
     {

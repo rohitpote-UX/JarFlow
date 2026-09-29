@@ -15,10 +15,11 @@ import { JarManagementModal } from './components/jars/JarManagementModal';
 import { SettingsModal } from './components/common/SettingsModal';
 import { NotificationModal } from './components/common/NotificationModal';
 import { PWAInstallPrompt } from './components/common/PWAInstallPrompt';
+import { OnboardingModal } from './components/onboarding/OnboardingModal';
 
 export const AppContent: React.FC = () => {
-  const { activeTab, settings } = useApp();
-  const isMarathi = settings.language === 'mr';
+  const { activeTab, business } = useApp();
+  const isMarathi = business.language === 'mr';
 
   const renderActiveView = () => {
     switch (activeTab) {
@@ -51,6 +52,9 @@ export const AppContent: React.FC = () => {
 
       {/* Bottom Sticky Navigation */}
       <BottomNav />
+
+      {/* Lightweight First-Login Onboarding */}
+      <OnboardingModal />
 
       {/* Modals & Drawers */}
       <GlobalSearchModal />

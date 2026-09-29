@@ -8,14 +8,15 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * Core daily transactions table: Given, Returned, Billing, Cash, UPI, Udhari.
+     * Core daily transactions table (tenant-scoped).
      */
     public function up(): void
     {
         Schema::create('jar_transactions', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('customer_id')->constrained('customers')->cascadeOnDelete();
-            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete(); // Staff / Admin who created
+            $table->foreignUuid('business_id')->constrained('businesses')->cascadeOnDelete()->index();
+            $table->foreignUuid('customer_id')->constrained('customers')->cascadeOnDelete()->index();
+            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
             
             $table->date('transaction_date')->index();
             
@@ -26,11 +27,11 @@ return new class extends Migration
             
             // Financials
             $table->decimal('rate_per_jar', 8, 2)->default(35.00);
-            $table->decimal('bill_amount', 12, 2)->default(0.00); // jars_given * rate_per_jar
+            $table->decimal('bill_amount', 12, 2)->default(0.00);
             $table->decimal('cash_paid', 12, 2)->default(0.00);
             $table->decimal('upi_paid', 12, 2)->default(0.00);
             $table->decimal('total_paid', 12, 2)->default(0.00);
-            $table->decimal('udhari_amount', 12, 2)->default(0.00); // bill_amount - total_paid
+            $table->decimal('udhari_amount', 12, 2)->default(0.00);
             
             $table->enum('payment_mode', ['CASH', 'UPI', 'SPLIT', 'UDHARI', 'NONE'])->default('CASH');
             $table->string('reference_no')->nullable();

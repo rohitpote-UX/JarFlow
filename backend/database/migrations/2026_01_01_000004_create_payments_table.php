@@ -8,13 +8,14 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * Payments collection table: direct credit recovery.
+     * Payments collection table (tenant-scoped).
      */
     public function up(): void
     {
         Schema::create('payments', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('customer_id')->constrained('customers')->cascadeOnDelete();
+            $table->foreignUuid('business_id')->constrained('businesses')->cascadeOnDelete()->index();
+            $table->foreignUuid('customer_id')->constrained('customers')->cascadeOnDelete()->index();
             $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
             
             $table->date('payment_date')->index();

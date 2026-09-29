@@ -1,45 +1,51 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { X, Settings, Building, Phone, QrCode, IndianRupee, RotateCcw } from 'lucide-react';
-import { defaultCustomers, defaultSettings } from '../../utils/storage';
+import { X, Settings, RotateCcw } from 'lucide-react';
 import { sound } from '../../utils/sound';
 
 export const SettingsModal: React.FC = () => {
   const {
-    settings,
-    updateSettings,
+    business,
+    updateBusiness,
+    resetToEmptyBusiness,
     settingsModalOpen,
     setSettingsModalOpen,
   } = useApp();
 
-  const isMr = settings.language === 'mr';
+  const isMr = business.language === 'mr';
 
-  const [businessName, setBusinessName] = useState(settings.businessName);
-  const [ownerName, setOwnerName] = useState(settings.ownerName);
-  const [phone, setPhone] = useState(settings.phone);
-  const [upiId, setUpiId] = useState(settings.upiId);
-  const [defaultJarRate, setDefaultJarRate] = useState(settings.defaultJarRate);
-  const [totalGodownJars, setTotalGodownJars] = useState(settings.totalGodownJars);
+  const [businessName, setBusinessName] = useState(business.name);
+  const [ownerName, setOwnerName] = useState(business.ownerName);
+  const [phone, setPhone] = useState(business.phone);
+  const [upiId, setUpiId] = useState(business.upiId || '');
+  const [defaultJarRate, setDefaultJarRate] = useState(business.defaultJarRate);
+  const [totalGodownJars, setTotalGodownJars] = useState(business.totalGodownJars);
 
   if (!settingsModalOpen) return null;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    updateSettings({
-      businessName,
+    updateBusiness({
+      name: businessName,
       ownerName,
       phone,
       upiId,
       defaultJarRate: Number(defaultJarRate) || 35,
-      totalGodownJars: Number(totalGodownJars) || 500,
+      totalGodownJars: Number(totalGodownJars) || 0,
     });
     setSettingsModalOpen(false);
   };
 
-  const handleResetDefaults = () => {
-    if (confirm(isMr ? 'सर्व मूळ सेटिंग्ज आणि नमुना डेटा पूर्ववत करायचा आहे का?' : 'Reset all data to defaults?')) {
-      localStorage.clear();
-      window.location.reload();
+  const handleResetToClean = () => {
+    if (
+      confirm(
+        isMr
+          ? 'तुमचा व्यवसाय पूर्णपणे नवीन स्थितीत (Zero Records) रीसेट करायचा आहे का?'
+          : 'Reset business to clean zero state?'
+      )
+    ) {
+      resetToEmptyBusiness();
+      setSettingsModalOpen(false);
     }
   };
 
@@ -157,14 +163,14 @@ export const SettingsModal: React.FC = () => {
             </button>
           </div>
 
-          <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+          <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
             <button
               type="button"
-              onClick={handleResetDefaults}
+              onClick={handleResetToClean}
               className="text-[11px] text-danger-600 hover:underline flex items-center gap-1 active-press"
             >
               <RotateCcw className="w-3 h-3" />
-              <span>{isMr ? 'मूळ नमुना डेटा पूर्ववत करा' : 'Reset to Sample Data'}</span>
+              <span>{isMr ? 'नवीन व्यवसाय सुरू करा (Zero Reset)' : 'Start Fresh (Clean 0 State)'}</span>
             </button>
           </div>
         </form>
